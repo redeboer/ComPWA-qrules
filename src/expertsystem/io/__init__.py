@@ -19,7 +19,7 @@ from expertsystem.amplitude.model import (
 from expertsystem.particle import Particle, ParticleCollection
 from expertsystem.reaction.topology import StateTransitionGraph, Topology
 
-from . import _dict, _dot, _pdg
+from . import _dict, _pdg, dot
 
 
 def asdict(instance: object) -> dict:
@@ -127,9 +127,9 @@ def convert_to_dot(instance: object) -> str:
     .. seealso:: :doc:`/usage/visualization`
     """
     if isinstance(instance, (StateTransitionGraph, Topology)):
-        return _dot.graph_to_dot(instance)
+        return dot.graph_to_dot(instance)
     if isinstance(instance, list):
-        return _dot.graph_list_to_dot(instance)
+        return dot.graph_list_to_dot(instance)
     raise NotImplementedError(
         f"Cannot convert a {instance.__class__.__name__} to DOT language"
     )
