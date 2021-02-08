@@ -1,11 +1,13 @@
 # pylint: disable=redefined-outer-name
 
+from collections import OrderedDict
 from math import factorial
 
 import pytest
 
 from expertsystem.particle import ParticleCollection
 from expertsystem.reaction.combinatorics import (
+    _calculate_swappings,
     _generate_kinematic_permutations,
     _generate_outer_edge_permutations,
     _generate_spin_permutations,
@@ -104,6 +106,31 @@ class TestKinematicRepresentation:
             assert float() in kinematic_representation
         with pytest.raises(ValueError):
             assert ["should be nested list"] in kinematic_representation
+
+
+@pytest.mark.parametrize(
+    "id_mapping, swappings",
+    [
+        (
+            {1: 2},
+            OrderedDict([(2, 1)]),
+        ),
+        (
+            {1: 2, 2: 1},
+            OrderedDict([(2, 1)]),
+        ),
+        (
+            {1: 2, 2: 1, 3: 2},
+            OrderedDict([(2, 3)]),
+        ),
+        (
+            {3: 4, 1: 2, 2: 1},
+            OrderedDict([(4, 3), (2, 1)]),
+        ),
+    ],
+)
+def test_calculate_swappings(id_mapping, swappings):
+    assert _calculate_swappings(id_mapping) == swappings
 
 
 @pytest.mark.parametrize(
