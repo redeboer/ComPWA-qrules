@@ -455,7 +455,7 @@ def _match_external_edge_ids(  # pylint: disable=too-many-locals
         )
         # remove matching entries
         ref_mapping_copy = deepcopy(ref_edge_id_particle_mapping)
-        edge_ids_mapping = {}
+        edge_ids_mapping: Dict[int, int] = {}
         for key, value in edge_id_particle_mapping.items():
             if key in ref_mapping_copy and value == ref_mapping_copy[key]:
                 del ref_mapping_copy[key]
@@ -506,7 +506,7 @@ def _external_edge_identical_particle_combinatorics(
     ],
 ) -> List[StateTransitionGraph]:
     # pylint: disable=too-many-locals
-    new_graphs = [graph]
+    new_graphs: List[StateTransitionGraph[ParticleWithSpin]] = [graph]
     edge_particle_mapping = _create_edge_id_particle_mapping(
         graph, external_edge_getter_function(graph)
     )
@@ -524,14 +524,14 @@ def _external_edge_identical_particle_combinatorics(
     for edge_group in identical_particle_groups.values():
         combinations = permutations(edge_group)
         graph_combinations = set()
-        ext_edge_combinations = []
+        ext_edge_combinations: List[Dict[int, int]] = []
         ref_node_origin = get_originating_node_list(graph.topology, edge_group)
         for comb in combinations:
             temp_edge_node_mapping = tuple(sorted(zip(comb, ref_node_origin)))
             if temp_edge_node_mapping not in graph_combinations:
                 graph_combinations.add(temp_edge_node_mapping)
                 ext_edge_combinations.append(dict(zip(edge_group, comb)))
-        temp_new_graphs = []
+        temp_new_graphs: List[StateTransitionGraph[ParticleWithSpin]] = []
         for new_graph in new_graphs:
             for combination in ext_edge_combinations:
                 graph_copy = deepcopy(new_graph)
