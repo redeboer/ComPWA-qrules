@@ -5,16 +5,22 @@ list see the documentation:
 https://www.sphinx-doc.org/en/master/usage/configuration.html
 """
 
+import inspect
 import os
 import re
 import shutil
 import subprocess
 import sys
+from os.path import dirname, realpath
+from typing import Optional
 
 import requests
 
 # pyright: reportMissingImports=false
 import sphobjinv as soi
+from git import Repo
+from git.exc import InvalidGitRepositoryError
+from git.objects import Commit, TagObject
 from pkg_resources import get_distribution
 from pybtex.database import Entry
 from pybtex.plugin import register_plugin
@@ -145,9 +151,9 @@ extensions = [
     "sphinx.ext.doctest",
     "sphinx.ext.graphviz",
     "sphinx.ext.intersphinx",
+    "sphinx.ext.linkcode",
     "sphinx.ext.mathjax",
     "sphinx.ext.napoleon",
-    "sphinx.ext.viewcode",
     "sphinx_codeautolink",
     "sphinx_comments",
     "sphinx_copybutton",
@@ -229,7 +235,6 @@ html_title = "Quantum number conservation rules"
 panels_add_bootstrap_css = False  # wider page width with sphinx-panels
 pygments_style = "sphinx"
 todo_include_todos = False
-viewcode_follow_imported_members = True
 
 # Cross-referencing configuration
 default_role = "py:obj"
@@ -299,6 +304,95 @@ intersphinx_mapping = {
     "pwa": ("https://pwa.readthedocs.io", None),
     "python": ("https://docs.python.org/3", None),
 }
+
+
+# Linkcode settings
+def get_blob_url() -> str:
+    try:
+        local_repo_path = dirname(dirname(realpath(__file__)))
+        repo = Repo(local_repo_path)
+        branch = repo.active_branch
+        tracking_branch = branch.tracking_branch()
+        if tracking_branch:
+            remote = repo.remote(tracking_branch.remote_name)
+            repo_url = get_repo_url(remote.url)
+            if repo_url is not None:
+                commit = repo.head.commit
+                tag = get_tag(repo, commit)
+                if tag is None:
+                    sha = str(commit)[:7]
+                    return f"{repo_url}/blob/{sha}"
+                return f"{repo_url}/tree/{tag}"
+    except InvalidGitRepositoryError:
+        pass
+    return f"https://github.com/ComPWA/{REPO_NAME}/blob/main"
+
+
+def get_repo_url(ssh_remote: str) -> Optional[str]:
+    matches = re.match(r"^git@github.com:(.+)/(.+).git$", ssh_remote)
+    if matches is None:
+        matches = re.match(
+            r"^https://github.com/(.+)/(.+?)(\.git)?$", ssh_remote
+        )
+        if matches is None:
+            return None
+    organization = matches[1]
+    repo_name = matches[2]
+    return f"https://github.com/{organization}/{repo_name}"
+
+
+def get_tag(repo: Repo, commit: Commit) -> Optional[TagObject]:
+    for tag in repo.tags:
+        if commit == repo.commit(tag):
+            return tag
+    return None
+
+
+def linkcode_resolve(domain, info):  # type: ignore[no-untyped-def]
+    """See https://www.sphinx-doc.org/en/master/usage/extensions/linkcode.html.
+
+    Based on
+    https://github.com/numpy/numpy/blob/0b01b48/doc/source/conf.py#L409-L476
+    but links to specific commits if available on the remote.
+    """
+    if domain != "py":
+        return None
+
+    module = info["module"]
+    fullname = info["fullname"]
+
+    submod = sys.modules.get(module)
+    if submod is None:
+        return None
+
+    obj = submod
+    for part in fullname.split("."):
+        try:
+            obj = getattr(obj, part)
+        except AttributeError:
+            return None
+
+    try:
+        fn = inspect.getsourcefile(inspect.unwrap(obj))
+    except TypeError:
+        fn = None
+    if not fn:
+        return None
+
+    try:
+        source, lineno = inspect.getsourcelines(obj)
+    except OSError:
+        lineno = None
+
+    if lineno:
+        line_specification = f"#L{lineno}-L{lineno + len(source) - 1}"
+    else:
+        line_specification = ""
+
+    filename = info["module"].replace(".", "/") + ".py"
+    blob_url = get_blob_url()
+    return f"{blob_url}/src/{filename}{line_specification}"
+
 
 # Settings for autosectionlabel
 autosectionlabel_prefix_document = True
