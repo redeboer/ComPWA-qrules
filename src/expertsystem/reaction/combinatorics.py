@@ -556,5 +556,5 @@ def _create_edge_id_particle_mapping(
     return {
         i: graph.get_edge_props(i)[0].name
         for i in edge_ids
-        if graph.get_edge_props(i)
+        if graph.edge_props[i]
     }
