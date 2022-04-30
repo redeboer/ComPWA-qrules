@@ -29,6 +29,7 @@ from typing import (
     Set,
     Tuple,
     TypeVar,
+    Union,
     ValuesView,
 )
 
@@ -546,10 +547,71 @@ def _attach_node_to_edges(
     return (temp_graph, new_open_end_lines)
 
 
+class PropertyMapping(  # pylint: disable=too-many-ancestors
+    Generic[_K, _V], abc.MutableMapping
+):
+    def __init__(
+        self,
+        collection: Collection[_K],
+        properties: Optional[Mapping[_K, _V]] = None,
+    ) -> None:
+        self.__collection: FrozenSet[_K] = frozenset(collection)
+        self.__properties: Dict[_K, _V] = dict()
+        if properties is not None:
+            self.__properties = dict(properties)
+
+    def __post_init__(self) -> None:
+        defined = set(self.__properties)
+        existing = set(self.__collection)
+        over_defined = existing & defined ^ defined
+        if over_defined:
+            raise ValueError(
+                "Properties have been defined for items that don't exist."
+                f" Available items: {existing}, over-defined: {over_defined}"
+            )
+
+    def __iter__(self) -> Iterator[_K]:
+        return iter(self.__properties)
+
+    def __len__(self) -> int:
+        return len(self.__properties)
+
+    def __delitem__(self, key: _K) -> None:
+        del self.__properties[key]
+
+    def __getitem__(self, key: _K) -> _V:
+        self.__verify_in_collection(key)
+        if key not in self.__properties:
+            raise KeyError(f"No property defined for item {key}")
+        return self.__properties[key]
+
+    def __setitem__(self, key: _K, value: _V) -> None:
+        self.__verify_in_collection(key)
+        self.__properties[key] = value
+
+    def __verify_in_collection(self, key: _K) -> None:
+        if key not in self.__collection:
+            raise KeyError(
+                f'Item {key} does not exist in underlying collection".'
+                f" Available items: {set(self.__collection)}"
+            )
+
+
+def _converter(properties: Union[PropertyMapping, Dict]) -> PropertyMapping:
+    if isinstance(properties, PropertyMapping):
+        return properties
+    if isinstance(properties, abc.Mapping):
+        return PropertyMapping(
+            collection=set(properties), properties=properties
+        )
+    raise NotImplementedError
+
+
 EdgeType = TypeVar("EdgeType")
 """A `~typing.TypeVar` representing the type of edge properties."""
 
 
+@attr.s
 class StateTransitionGraph(Generic[EdgeType]):
     """Graph class that resembles a frozen `.Topology` with properties.
 
@@ -560,21 +622,74 @@ class StateTransitionGraph(Generic[EdgeType]):
     retrieval.
     """
 
-    def __init__(
-        self,
-        topology: Topology,
-        node_props: Mapping[int, InteractionProperties],
-        edge_props: Mapping[int, EdgeType],
-    ):
-        self.__node_props = dict(node_props)
-        self.__edge_props = dict(edge_props)
-        if not isinstance(topology, Topology):
-            raise TypeError
-        self.topology = topology
+    topology: Topology = attr.ib()
+    node_props: PropertyMapping[
+        int, Optional[InteractionProperties]
+    ] = attr.ib(
+        on_setattr=attr.setters.frozen,
+        validator=attr.validators.instance_of(PropertyMapping),
+        converter=_converter,
+    )
+    edge_props: PropertyMapping[int, Optional[EdgeType]] = attr.ib(
+        on_setattr=attr.setters.frozen,
+        validator=attr.validators.instance_of(PropertyMapping),
+        converter=_converter,
+    )
+    graph_node_properties_comparator: Optional[
+        Callable[[InteractionProperties, InteractionProperties], bool]
+    ] = attr.ib(
+        default=None,
+        validator=attr.validators.optional(attr.validators.is_callable()),
+        on_setattr=attr.setters.NO_OP,
+    )
 
-    def __post_init__(self) -> None:
-        _assert_over_defined(self.topology.nodes, self.__node_props)
-        _assert_over_defined(self.topology.edges, self.__edge_props)
+    @node_props.default
+    def _default_node_props(self) -> None:
+        self.node_props = PropertyMapping(self.topology.nodes)
+
+    @edge_props.default
+    def _default_edge_props(self) -> None:
+        self.edge_props = PropertyMapping(self.topology.edges)
+
+    def __attrs_post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "edge_props",
+            PropertyMapping(
+                self.topology.edges,
+                dict(self.edge_props.items()),
+            ),
+        )
+        object.__setattr__(
+            self,
+            "node_props",
+            PropertyMapping(
+                self.topology.nodes,
+                dict(self.node_props.items()),
+            ),
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, StateTransitionGraph):
+            if self.topology != other.topology:
+                return False
+            if any(
+                self.get_edge_props(i) != other.get_edge_props(i)
+                for i in self.topology.edges
+            ):
+                return False
+            if self.graph_node_properties_comparator is not None:
+                return all(
+                    self.graph_node_properties_comparator(
+                        self.get_node_props(i), other.get_node_props(i)
+                    )
+                    for i in self.topology.nodes
+                )
+            return all(
+                self.get_node_props(i) == other.get_node_props(i)
+                for i in self.topology.nodes
+            )
+        raise NotImplementedError
 
     def get_node_props(self, node_id: int) -> InteractionProperties:
         return self.__node_props[node_id]
