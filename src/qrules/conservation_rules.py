@@ -770,7 +770,7 @@ def spin_magnitude_conservation(
 ) -> bool:
     r"""Check for spin conservation.
 
-    Implements
+    In case of an isobar reaction (1-to-2 or 2-to-1), check for:
 
     .. math::
         |S_1 - S_2| \leq S \leq |S_1 + S_2|
@@ -779,10 +779,10 @@ def spin_magnitude_conservation(
 
     .. math::
         |L - S| \leq J \leq |L + S|
+
+    In other cases, only check whether both sides are either all integer or all
+    half-spin.
     """
-    # L and S can only be used if one side is a single state
-    # and the other side contains of two states (isobar)
-    # So do a full check if this is the case
     if (len(ingoing_spins) == 1 and len(outgoing_spins) == 2) or (
         len(ingoing_spins) == 2 and len(outgoing_spins) == 1
     ):
@@ -791,9 +791,6 @@ def spin_magnitude_conservation(
             [x.spin_magnitude for x in outgoing_spins],
             interaction_qns,
         )
-
-    # otherwise don't use S and L and just check magnitude
-    # are integral or non integral on both sides
     return (
         sum([float(x.spin_magnitude) for x in ingoing_spins]).is_integer()
         == sum([float(x.spin_magnitude) for x in outgoing_spins]).is_integer()
