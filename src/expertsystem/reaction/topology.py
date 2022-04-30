@@ -11,6 +11,7 @@ The main interface is the `.StateTransitionGraph`.
 import copy
 import itertools
 import logging
+from collections import abc
 from typing import (
     Callable,
     Collection,
@@ -18,6 +19,7 @@ from typing import (
     FrozenSet,
     Generic,
     Iterable,
+    Iterator,
     List,
     Mapping,
     Optional,
@@ -25,6 +27,7 @@ from typing import (
     Set,
     Tuple,
     TypeVar,
+    Union,
 )
 
 import attr
@@ -491,10 +494,75 @@ def _attach_node_to_edges(
     return (temp_graph, new_open_end_lines)
 
 
+_K = TypeVar("_K")
+_V = TypeVar("_V")
+
+
+class PropertyMapping(  # pylint: disable=too-many-ancestors
+    Generic[_K, _V], abc.MutableMapping
+):
+    def __init__(
+        self,
+        collection: Collection[_K],
+        properties: Optional[Mapping[_K, _V]] = None,
+    ) -> None:
+        self.__collection: FrozenSet[_K] = frozenset(collection)
+        self.__properties: Dict[_K, _V] = dict()
+        if properties is not None:
+            self.__properties = dict(properties)
+
+    def __post_init__(self) -> None:
+        defined = set(self.__properties)
+        existing = set(self.__collection)
+        over_defined = existing & defined ^ defined
+        if over_defined:
+            raise ValueError(
+                "Properties have been defined for items that don't exist."
+                f" Available items: {existing}, over-defined: {over_defined}"
+            )
+
+    def __iter__(self) -> Iterator[_K]:
+        return iter(self.__properties)
+
+    def __len__(self) -> int:
+        return len(self.__properties)
+
+    def __delitem__(self, key: _K) -> None:
+        del self.__properties[key]
+
+    def __getitem__(self, key: _K) -> _V:
+        self.__verify_in_collection(key)
+        if key not in self.__properties:
+            raise KeyError(f"No property defined for item {key}")
+        return self.__properties[key]
+
+    def __setitem__(self, key: _K, value: _V) -> None:
+        self.__verify_in_collection(key)
+        self.__properties[key] = value
+
+    def __verify_in_collection(self, key: _K) -> None:
+        if key not in self.__collection:
+            raise KeyError(
+                f'Item {key} does not exist in underlying collection".'
+                f" Available items: {set(self.__collection)}"
+            )
+
+
+def _converter(properties: Union[PropertyMapping, Dict]) -> PropertyMapping:
+    if isinstance(properties, PropertyMapping):
+        return properties
+    if isinstance(properties, abc.Mapping):
+        return PropertyMapping(
+            collection=set(properties), properties=properties
+        )
+    raise NotImplementedError
+
+
 EdgeType = TypeVar("EdgeType")
 """A `~typing.TypeVar` representing the type of edge properties."""
 
 
+@attr.s
 class StateTransitionGraph(Generic[EdgeType]):
     """Graph class that resembles a frozen `.Topology` with properties.
 
@@ -505,28 +573,52 @@ class StateTransitionGraph(Generic[EdgeType]):
     retrieval.
     """
 
-    def __init__(
-        self,
-        topology: Topology,
-        node_props: Mapping[int, InteractionProperties],
-        edge_props: Mapping[int, EdgeType],
-    ):
-        self.__node_props = dict(node_props)
-        self.__edge_props = dict(edge_props)
-        if not isinstance(topology, Topology):
-            raise TypeError
-        self.__topology = Topology(
-            nodes=topology.nodes,
-            edges=topology.edges,
+    topology: Topology = attr.ib()
+    node_props: PropertyMapping[
+        int, Optional[InteractionProperties]
+    ] = attr.ib(
+        on_setattr=attr.setters.frozen,
+        validator=attr.validators.instance_of(PropertyMapping),
+        converter=_converter,
+    )
+    edge_props: PropertyMapping[int, Optional[EdgeType]] = attr.ib(
+        on_setattr=attr.setters.frozen,
+        validator=attr.validators.instance_of(PropertyMapping),
+        converter=_converter,
+    )
+    graph_node_properties_comparator: Optional[
+        Callable[[InteractionProperties, InteractionProperties], bool]
+    ] = attr.ib(
+        default=None,
+        validator=attr.validators.optional(attr.validators.is_callable()),
+        on_setattr=attr.setters.NO_OP,
+    )
+
+    @node_props.default
+    def _default_node_props(self) -> None:
+        self.node_props = PropertyMapping(self.topology.nodes)
+
+    @edge_props.default
+    def _default_edge_props(self) -> None:
+        self.edge_props = PropertyMapping(self.topology.edges)
+
+    def __attrs_post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "edge_props",
+            PropertyMapping(
+                self.topology.edges,
+                dict(self.edge_props.items()),
+            ),
         )
-
-    def __post_init__(self) -> None:
-        _assert_over_defined(self.topology.nodes, self.__node_props)
-        _assert_over_defined(self.topology.edges, self.__edge_props)
-
-    @property
-    def topology(self) -> Topology:
-        return self.__topology
+        object.__setattr__(
+            self,
+            "node_props",
+            PropertyMapping(
+                self.topology.nodes,
+                dict(self.node_props.items()),
+            ),
+        )
 
     @property
     def nodes(self) -> FrozenSet[int]:
@@ -563,10 +655,10 @@ class StateTransitionGraph(Generic[EdgeType]):
         return self.topology.get_originating_node_list(edge_ids)
 
     def get_node_props(self, node_id: int) -> InteractionProperties:
-        return self.__node_props[node_id]
+        return self.node_props[node_id]
 
     def get_edge_props(self, edge_id: int) -> EdgeType:
-        return self.__edge_props[edge_id]
+        return self.edge_props[edge_id]
 
     def evolve(
         self,
@@ -578,13 +670,13 @@ class StateTransitionGraph(Generic[EdgeType]):
         Since a `.StateTransitionGraph` is frozen (cannot be modified), the
         evolve function will also create a shallow copy the properties.
         """
-        new_node_props = copy.copy(self.__node_props)
+        new_node_props = copy.copy(self.node_props)
         if node_props:
             _assert_over_defined(self.topology.nodes, node_props)
             for node_id, node_prop in node_props.items():
                 new_node_props[node_id] = node_prop
 
-        new_edge_props = copy.copy(self.__edge_props)
+        new_edge_props = copy.copy(self.edge_props)
         if edge_props:
             _assert_over_defined(self.topology.edges, edge_props)
             for edge_id, edge_prop in edge_props.items():
@@ -623,17 +715,17 @@ class StateTransitionGraph(Generic[EdgeType]):
         return True
 
     def swap_edges(self, edge_id1: int, edge_id2: int) -> None:
-        self.__topology.swap_edges(edge_id1, edge_id2)
+        self.topology.swap_edges(edge_id1, edge_id2)
         value1: Optional[EdgeType] = None
         value2: Optional[EdgeType] = None
-        if edge_id1 in self.__edge_props:
-            value1 = self.__edge_props.pop(edge_id1)
-        if edge_id2 in self.__edge_props:
-            value2 = self.__edge_props.pop(edge_id2)
+        if edge_id1 in self.edge_props:
+            value1 = self.edge_props.pop(edge_id1)
+        if edge_id2 in self.edge_props:
+            value2 = self.edge_props.pop(edge_id2)
         if value1 is not None:
-            self.__edge_props[edge_id2] = value1
+            self.edge_props[edge_id2] = value1
         if value2 is not None:
-            self.__edge_props[edge_id1] = value2
+            self.edge_props[edge_id1] = value2
 
 
 def _assert_over_defined(items: Collection, properties: Mapping) -> None:
