@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """Collection of quantum number conservation rules for particle reactions.
 
 This module is the place where the 'expert' defines the rules that verify
@@ -66,12 +67,18 @@ except ImportError:
 
 
 def _is_boson(spin_magnitude: float) -> bool:
+    """Bosons have integral `.Spin.magnitude`."""
     return abs(spin_magnitude % 1) < 0.01
 
 
 def _is_particle_antiparticle_pair(pid1: int, pid2: int) -> bool:
-    # we just check if the pid is opposite in sign
-    # this is a requirement of the pid numbers of course
+    """Check if whether two PID numbers for a particle-anti-particle pair.
+
+    This check assumes the `.Particle.pid` follows the `Monte Carlo numbering
+    scheme
+    <https://pdg.lbl.gov/2020/reviews/rpp2020-rev-monte-carlo-numbering.pdf>`_
+    of the PDG.
+    """
     return pid1 == -pid2
 
 
@@ -108,7 +115,7 @@ def additive_quantum_number_rule(
     Use this decorator to create a `EdgeQNConservationRule` for a quantum number
     to which an additive conservation rule applies:
 
-    .. math:: \sum q_{in} = \sum q_{out}
+    .. math:: \sum q_\mathrm{in} = \sum q_\mathrm{out}
 
     Args:
         quantum_number: Quantum number to which you want to apply the additive
@@ -179,7 +186,15 @@ def parity_conservation(
     outgoing_edge_qns: List[EdgeQN.parity],
     l_magnitude: NodeQN.l_magnitude,
 ) -> bool:
-    r"""Implement :math:`P_{in} = P_{out} \cdot (-1)^L`."""
+    r"""Check whether parity is conserved.
+
+    Implements :math:`\eta_0 = \eta_1\eta_2 \cdot (-1)^L` with :math:`\eta_0`
+    the parity of the initial state, :math:`\eta_{1,2}` the parities of the two
+    final states, and :math:`L` the angular momentum of the interaction.
+
+    .. warning:: This check is only performed on 1-to-2 body decays and returns
+        `True` if otherwise.
+    """
     if len(ingoing_edge_qns) == 1 and len(outgoing_edge_qns) == 2:
         parity_in = reduce(lambda x, y: x * y.value, ingoing_edge_qns, 1)
         parity_out = reduce(lambda x, y: x * y.value, outgoing_edge_qns, 1)
@@ -239,6 +254,8 @@ def parity_conservation_helicity(
 
 @attr.s(frozen=True)
 class CParityEdgeInput:
+    """Input type for :func:`c_parity_conservation`."""
+
     spin_magnitude: EdgeQN.spin_magnitude = attr.ib(
         converter=EdgeQN.spin_magnitude
     )
@@ -250,6 +267,8 @@ class CParityEdgeInput:
 
 @attr.s(frozen=True)
 class CParityNodeInput:
+    """Input type for :func:`c_parity_conservation`."""
+
     l_magnitude: NodeQN.l_magnitude = attr.ib(converter=NodeQN.l_magnitude)
     s_magnitude: NodeQN.s_magnitude = attr.ib(converter=NodeQN.s_magnitude)
 
@@ -259,9 +278,9 @@ def c_parity_conservation(
     outgoing_edge_qns: List[CParityEdgeInput],
     interaction_node_qns: CParityNodeInput,
 ) -> bool:
-    """Check for :math:`C`-parity conservation.
+    r"""Check for :math:`C`-parity conservation.
 
-    Implements :math:`C_{in} = C_{out}`.
+    Implements :math:`C_\mathrm{in} = C_\mathrm{out}`.
     """
 
     def _get_c_parity_multiparticle(
@@ -303,6 +322,8 @@ def c_parity_conservation(
 
 @attr.s(frozen=True)
 class GParityEdgeInput:
+    """Input type for :func:`g_parity_conservation`."""
+
     isospin_magnitude: EdgeQN.isospin_magnitude = attr.ib(
         converter=EdgeQN.isospin_magnitude
     )
@@ -317,6 +338,8 @@ class GParityEdgeInput:
 
 @attr.s(frozen=True)
 class GParityNodeInput:
+    """Input type for :func:`g_parity_conservation`."""
+
     l_magnitude: NodeQN.l_magnitude = attr.ib(converter=NodeQN.l_magnitude)
     s_magnitude: NodeQN.s_magnitude = attr.ib(converter=NodeQN.s_magnitude)
 
@@ -326,9 +349,9 @@ def g_parity_conservation(
     outgoing_edge_qns: List[GParityEdgeInput],
     interaction_qns: GParityNodeInput,
 ) -> bool:
-    """Check for :math:`G`-parity conservation.
+    r"""Check for :math:`G`-parity conservation.
 
-    Implements for :math:`G_{in} = G_{out}`.
+    Implements for :math:`G_\mathrm{in} = G_\mathrm{out}`.
     """
 
     def check_multistate_g_parity(
@@ -404,6 +427,8 @@ def g_parity_conservation(
 
 @attr.s(frozen=True)
 class IdenticalParticleSymmetryOutEdgeInput:
+    """Input type for :func:`identical_particle_symmetrization`."""
+
     spin_magnitude: EdgeQN.spin_magnitude = attr.ib(
         converter=EdgeQN.spin_magnitude
     )
@@ -417,18 +442,20 @@ def identical_particle_symmetrization(
     ingoing_parities: List[EdgeQN.parity],
     outgoing_edge_qns: List[IdenticalParticleSymmetryOutEdgeInput],
 ) -> bool:
-    """Verifies multi particle state symmetrization for identical particles.
+    """Verifies multi-particle state symmetrization for identical particles.
 
-    In case of a multi particle state with identical particles, their exchange
+    In case of a multi-particle state with identical particles, their exchange
     symmetry has to follow the spin statistic theorem.
 
-    For bosonic systems the total exchange symmetry (parity) has to be even
-    (+1). For fermionic systems the total exchange symmetry (parity) has to be
-    odd (-1).
+    - For **bosonic** systems, the total exchange symmetry (parity) has to be
+      even (:math:`+1`). For **fermionic** systems, the total exchange symmetry
+      (parity) has to be odd (:math:`+1`).
 
-    In case of a particle decaying into N identical particles (N>1), the
-    decaying particle has to have the same parity as required by the spin
-    statistic theorem of the multi body state.
+    - In case of a particle decaying into :math:`N` identical particles
+      (:math:`N>1`), the decaying particle needs to have the same parity as
+      required by the `spin statistics   theorem
+      <https://en.wikipedia.org/wiki/Spin%E2%80%93statistics_theorem>`_ of the
+      multi body state.
     """
 
     def _check_particles_identical(
@@ -466,6 +493,12 @@ def identical_particle_symmetrization(
 
 @attr.s(frozen=True)
 class _Spin:
+    """Local version of `.particle.Spin` to avoid circular dependencies.
+
+    As opposed to `.particle.Spin`, the magnitude and projection of this class
+    are not checked for spin validity.
+    """
+
     magnitude: float = attr.ib()
     projection: float = attr.ib()
 
@@ -648,6 +681,12 @@ class IsoSpinEdgeInput:
 
 
 def _check_spin_valid(magnitude: float, projection: float) -> bool:
+    r"""Check whether a spin magnitude-projection pair makes sense.
+
+    - Magnitude should be a multiple of :math:`\tfrac{1}{2}`.
+    - Absolute value of projection should be no larger than the magnitude.
+    - Difference between magnitude and projection should be integral.
+    """
     if magnitude % 0.5 != 0.0:
         return False
     if abs(projection) > magnitude:
@@ -719,20 +758,49 @@ def spin_conservation(
     outgoing_spins: List[SpinEdgeInput],
     interaction_qns: SpinNodeInput,
 ) -> bool:
-    r"""Check for spin conservation.
+    r"""Checks spin conservation and angular momentum conservation.
 
-    Implements
+    * Spin conservation
+
+      .. math:: |S_1 - S_2| \leq S \leq |S_1 + S_2|
+
+      with :math:`S_i` the **total spin** of each outgoing state and :math:`S`
+      the total spin of the initial state.
+
+    * Angular momentum conservation:
+
+      .. math:: |L - S| \leq J \leq |L + S|
+
+      with :math:`L` the **orbital angular momentum**, :math:`S` the **total
+      spin**, and :math:`J=L \oplus S` the **total angular momentum**.
+
+    .. rubric:: Example
+
+    Imagine we have the following:
 
     .. math::
-        |S_1 - S_2| \leq S \leq |S_1 + S_2|
 
-    and
+      \left(|S_1-S_2|=|1-1|=0\right) &\leq (S=1) &\leq \left(|S_1+S_2|=|1+1|=2\right) \\
+      \left(|L-S|=|1-2|=1\right) &\leq J &\leq \left(|L+S|=|1+2|=3\right)
 
-    .. math::
-        |L - S| \leq J \leq |L + S|
+    In code this would be:
 
-    Also checks :math:`M_1 + M_2 = M` and if Clebsch-Gordan coefficients
-    are all 0.
+    >>> spin_conservation(
+    ...     ingoing_spins=[
+    ...         SpinEdgeInput(1, 0),
+    ...     ],
+    ...     outgoing_spins=[
+    ...         SpinEdgeInput(1, +1),
+    ...         SpinEdgeInput(1, -1),
+    ...     ],
+    ...     interaction_qns=SpinNodeInput(
+    ...         l_magnitude=1,
+    ...         l_projection=0,
+    ...         s_magnitude=2,
+    ...         s_projection=0,
+    ...     ),
+    ... )
+    True
     """
     # L and S can only be used if one side is a single state
     # and the other side contains of two states (isobar)
@@ -871,6 +939,8 @@ def helicity_conservation(
 
 @attr.s(frozen=True)
 class GellMannNishijimaInput:
+    """Input type for the :func:`gellmann_nishijima` rule."""
+
     # pylint: disable=too-many-instance-attributes
     charge: EdgeQN.charge = attr.ib(converter=EdgeQN.charge)
     isospin_projection: Optional[EdgeQN.isospin_projection] = attr.ib(
@@ -908,12 +978,12 @@ def gellmann_nishijima(edge_qns: GellMannNishijimaInput) -> bool:
     `Gell-Mann–Nishijima formula
     <https://en.wikipedia.org/wiki/Gell-Mann%E2%80%93Nishijima_formula>`_:
 
-    .. math::
-        Q = I_3 + \frac{1}{2}(B+S+C+B'+T)
+    .. math:: Q = I_3 + \frac{1}{2}(B+S+C+B'+T)
+        :label: gellmann_nishijima
 
     where
     :math:`Q` is charge (computed),
-    :math:`I_3` is `.Spin.projection` of `~.Particle.isospin`,
+    :math:`I_3` is the `.Spin.projection` of `~.Particle.isospin`,
     :math:`B` is `~.Particle.baryon_number`,
     :math:`S` is `~.Particle.strangeness`,
     :math:`C` is `~.Particle.charmness`,
@@ -956,6 +1026,8 @@ def gellmann_nishijima(edge_qns: GellMannNishijimaInput) -> bool:
 
 @attr.s(frozen=True)
 class MassEdgeInput:
+    """Input type for :meth:`MassConservation.__call__`."""
+
     mass: EdgeQN.mass = attr.ib(converter=EdgeQN.mass)
     width: Optional[EdgeQN.width] = attr.ib(
         converter=EdgeQN.width, default=None
@@ -975,11 +1047,13 @@ class MassConservation:
     ) -> bool:
         r"""Implements mass conservation.
 
-        :math:`M_{out} - N \cdot W_{out} < M_{in} + N \cdot W_{in}`
+        .. math:: M_\mathrm{out} - N \cdot W_\mathrm{out} < M_\mathrm{in} + N \cdot W_\mathrm{in}
+            :label: MassConservation
 
-        It makes sure that the net mass outgoing state :math:`M_{out}` is
-        smaller than the net mass of the ingoing state :math:`M_{in}`. Also the
-        width :math:`W` of the states is taken into account.
+        It makes sure that the net mass outgoing state :math:`M_\mathrm{out}` is
+        smaller than the net mass of the ingoing state :math:`M_\mathrm{in}`. Also the
+        width :math:`W` of the states is taken into account, with a certain
+        :attr:`.width_factor` :math:`N`.
         """
         mass_in = sum([x.mass for x in ingoing_edge_qns])
         width_in = sum([x.width for x in ingoing_edge_qns if x.width])
@@ -989,3 +1063,8 @@ class MassConservation:
         return (mass_out - self.__width_factor * width_out) < (
             mass_in + self.__width_factor * width_in
         )
+
+    @property
+    def width_factor(self) -> float:
+        r"""Width factor :math:`N` in :eq:`MassConservation`."""
+        return self.__width_factor

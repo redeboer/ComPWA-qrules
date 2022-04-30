@@ -16,12 +16,14 @@ ignore = # more info: https://www.flake8rules.com/
     RST299 # missing pygments
     RST201 # block quote ends without a blank line (black formatting)
     RST301 # unexpected indentation (related to google style docstring)
+    RST307 # false-positive in math directives with labels
     W503 # https://github.com/psf/black#line-breaks--binary-operators
 rst-roles =
     attr,
     cite,
     class,
     doc,
+    eq,
     download,
     file,
     func,
