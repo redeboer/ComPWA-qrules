@@ -17,7 +17,6 @@ from expertsystem.reaction._system_control import (
     require_interaction_property,
 )
 from expertsystem.reaction.combinatorics import (
-    ParticleWithSpin,
     _create_edge_id_particle_mapping,
     match_external_edges,
     perform_external_edge_identical_particle_combinatorics,
@@ -26,6 +25,7 @@ from expertsystem.reaction.quantum_numbers import (
     EdgeQuantumNumbers,
     InteractionProperties,
     NodeQuantumNumbers,
+    ParticleWithSpin,
 )
 from expertsystem.reaction.topology import Edge, StateTransitionGraph, Topology
 
@@ -356,6 +356,14 @@ def _create_graph(
             [("Y(4260)", [-1])],
             [("D0", [0]), ("D~0", [0]), ("pi0", [0]), ("pi0", [0])],
         ),
+        (
+            [("f(0)(1710)", [0])],
+            [("pi0", [0]), ("pi0", [0]), ("pi0", [0]), ("pi0", [0])],
+        ),
+        (
+            [("f(0)(1710)", [0])],
+            [("pi+", [0]), ("pi-", [0]), ("pi+", [0]), ("pi-", [0])],
+        ),
     ],
 )
 def test_edge_swap(particle_database, initial_state, final_state):
@@ -393,55 +401,6 @@ def test_edge_swap(particle_database, initial_state, final_state):
 
 
 @pytest.mark.parametrize(
-    "initial_state,final_state",
-    [
-        (
-            [("Y(4260)", [-1])],
-            [("D0", [0]), ("D~0", [0]), ("pi0", [0]), ("pi0", [0])],
-        ),
-        (
-            [("J/psi(1S)", [-1, 1])],
-            [("gamma", [-1, 1]), ("pi0", [0]), ("pi0", [0])],
-        ),
-    ],
-)
-def test_match_external_edges(particle_database, initial_state, final_state):
-    stm = StateTransitionManager(
-        initial_state,
-        final_state,
-        particle_database,
-        formalism_type="helicity",
-        number_of_threads=1,
-    )
-
-    stm.set_allowed_interaction_types([InteractionTypes.Strong])
-
-    problem_sets = stm.create_problem_sets()
-    init_graphs: List[StateTransitionGraph[ParticleWithSpin]] = []
-    for _, problem_set_list in problem_sets.items():
-        init_graphs.extend([_create_graph(x) for x in problem_set_list])
-
-    match_external_edges(init_graphs)
-
-    iter_graphs = iter(init_graphs)
-    first_graph = next(iter_graphs)
-    ref_mapping_fs = _create_edge_id_particle_mapping(
-        first_graph, first_graph.topology.outgoing_edge_ids
-    )
-    ref_mapping_is = _create_edge_id_particle_mapping(
-        first_graph, first_graph.topology.incoming_edge_ids
-    )
-
-    for graph in iter_graphs:
-        assert ref_mapping_fs == _create_edge_id_particle_mapping(
-            graph, first_graph.topology.outgoing_edge_ids
-        )
-        assert ref_mapping_is == _create_edge_id_particle_mapping(
-            graph, first_graph.topology.incoming_edge_ids
-        )
-
-
-@pytest.mark.parametrize(
     "initial_state,final_state,final_state_groupings,result_graph_count",
     [
         (
@@ -474,6 +433,18 @@ def test_match_external_edges(particle_database, initial_state, final_state):
             [["pi0", "gamma"]],
             2,
         ),
+        (
+            [("f(0)(1710)", [0])],
+            [("pi+", [0]), ("pi-", [0]), ("pi+", [0]), ("pi-", [0])],
+            [["pi+", "pi-"]],
+            12,
+        ),
+        (
+            [("f(0)(1710)", [0])],
+            [("pi0", [0]), ("pi0", [0]), ("pi0", [0]), ("pi0", [0])],
+            [["pi0", "pi0"]],
+            18,
+        ),
     ],
 )
 def test_external_edge_identical_particle_combinatorics(
@@ -496,27 +467,33 @@ def test_external_edge_identical_particle_combinatorics(
 
     problem_sets = stm.create_problem_sets()
 
-    init_graphs = []
-    for _, problem_set_list in problem_sets.items():
-        init_graphs.extend([_create_graph(x) for x in problem_set_list])
+    init_graphs = [
+        _create_graph(problem_set)
+        for problem_set_list in problem_sets.values()
+        for problem_set in problem_set_list
+    ]
 
     match_external_edges(init_graphs)
 
-    comb_graphs: List[StateTransitionGraph[ParticleWithSpin]] = []
-    for group in init_graphs:
-        comb_graphs.extend(
-            perform_external_edge_identical_particle_combinatorics(group)
+    comb_graphs: List[StateTransitionGraph[ParticleWithSpin]] = [
+        graph
+        for init_graph in init_graphs
+        for graph in perform_external_edge_identical_particle_combinatorics(
+            init_graph
         )
+    ]
     assert len(comb_graphs) == result_graph_count
 
+    comb_graphs_iter = iter(comb_graphs)
+    first_comb_graph = next(comb_graphs_iter)
     ref_mapping_fs = _create_edge_id_particle_mapping(
-        comb_graphs[0], comb_graphs[0].topology.outgoing_edge_ids
+        first_comb_graph, first_comb_graph.topology.outgoing_edge_ids
     )
     ref_mapping_is = _create_edge_id_particle_mapping(
-        comb_graphs[0], comb_graphs[0].topology.incoming_edge_ids
+        first_comb_graph, first_comb_graph.topology.incoming_edge_ids
     )
 
-    for group in comb_graphs[1:]:
+    for group in comb_graphs_iter:
         assert ref_mapping_fs == _create_edge_id_particle_mapping(
             group, group.topology.outgoing_edge_ids
         )

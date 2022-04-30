@@ -1078,6 +1078,7 @@ def generate(  # pylint: disable=too-many-arguments
     final_state: Sequence[StateDefinition],
     allowed_intermediate_particles: Optional[List[str]] = None,
     allowed_interaction_types: Optional[Union[str, List[str]]] = None,
+    mass_conservation_factor: Optional[float] = None,
     formalism_type: str = "helicity",
     particles: Optional[ParticleCollection] = None,
     topology_building: str = "isobar",
@@ -1158,6 +1159,7 @@ def generate(  # pylint: disable=too-many-arguments
         formalism_type=formalism_type,
         topology_building=topology_building,
         number_of_threads=number_of_threads,
+        mass_conservation_factor=mass_conservation_factor,
     )
     if allowed_interaction_types is not None:
         interaction_types = _determine_interaction_types(

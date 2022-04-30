@@ -456,14 +456,17 @@ def _match_external_edge_ids(  # pylint: disable=too-many-locals
         # remove matching entries
         ref_mapping_copy = deepcopy(ref_edge_id_particle_mapping)
         edge_ids_mapping: Dict[int, int] = {}
-        for key, value in edge_id_particle_mapping.items():
-            if key in ref_mapping_copy and value == ref_mapping_copy[key]:
-                del ref_mapping_copy[key]
+        for edge_id, particle_name in edge_id_particle_mapping.items():
+            if (
+                edge_id in ref_mapping_copy
+                and particle_name == ref_mapping_copy[edge_id]
+            ):
+                del ref_mapping_copy[edge_id]
             else:
-                for key_2, value_2 in ref_mapping_copy.items():
-                    if value == value_2:
-                        edge_ids_mapping[key] = key_2
-                        del ref_mapping_copy[key_2]
+                for ref_edge_id, ref_particle_name in ref_mapping_copy.items():
+                    if particle_name == ref_particle_name:
+                        edge_ids_mapping[edge_id] = ref_edge_id
+                        del ref_mapping_copy[ref_edge_id]
                         break
         if len(ref_mapping_copy) != 0:
             raise ValueError(
@@ -549,13 +552,13 @@ def _calculate_swappings(id_mapping: Dict[int, int]) -> OrderedDict:
     Its important to use an ordered dict as the swappings do not commute!
     """
     swappings: OrderedDict = OrderedDict()
-    for key, value in id_mapping.items():
+    for edge_id, ref_edge_id in id_mapping.items():
         # go through existing swappings and use them
-        newkey = key
-        while newkey in swappings:
-            newkey = swappings[newkey]
-        if value != newkey:
-            swappings[value] = newkey
+        new_edge_id = edge_id
+        while new_edge_id in swappings:
+            new_edge_id = swappings[new_edge_id]
+        if ref_edge_id != new_edge_id:
+            swappings[ref_edge_id] = new_edge_id
     return swappings
 
 
