@@ -463,13 +463,15 @@ def identical_particle_symmetrization(
 
 
 @attr.s(frozen=True)
-class _Spin:
+class _UnsafeSpin:
+    """A version of the `.Spin` container that does not validate input."""
+
     magnitude: float = attr.ib()
     projection: float = attr.ib()
 
 
 def _is_clebsch_gordan_coefficient_zero(
-    spin1: _Spin, spin2: _Spin, spin_coupled: _Spin
+    spin1: _UnsafeSpin, spin2: _UnsafeSpin, spin_coupled: _UnsafeSpin
 ) -> bool:
     m_1 = spin1.projection
     j_1 = spin1.magnitude
@@ -562,8 +564,8 @@ def _check_magnitude(
 
 
 def _check_spin_couplings(
-    in_part: List[_Spin],
-    out_part: List[_Spin],
+    in_part: List[_UnsafeSpin],
+    out_part: List[_UnsafeSpin],
     interaction_qns: Optional[SpinNodeInput],
 ) -> bool:
     in_tot_spins = __calculate_total_spins(in_part, interaction_qns)
@@ -575,21 +577,21 @@ def _check_spin_couplings(
 
 
 def __calculate_total_spins(
-    spins: List[_Spin],
+    spins: List[_UnsafeSpin],
     interaction_qns: Optional[SpinNodeInput] = None,
-) -> Set[_Spin]:
+) -> Set[_UnsafeSpin]:
     total_spins = set()
     if len(spins) == 1:
         return set(spins)
     total_spins = __create_coupled_spins(spins)
     if interaction_qns:
-        coupled_spin = _Spin(
+        coupled_spin = _UnsafeSpin(
             interaction_qns.s_magnitude, interaction_qns.s_projection
         )
         if coupled_spin in total_spins:
             return __spin_couplings(
                 coupled_spin,
-                _Spin(
+                _UnsafeSpin(
                     interaction_qns.l_magnitude, interaction_qns.l_projection
                 ),
             )
@@ -598,9 +600,9 @@ def __calculate_total_spins(
     return total_spins
 
 
-def __create_coupled_spins(spins: List[_Spin]) -> Set[_Spin]:
+def __create_coupled_spins(spins: List[_UnsafeSpin]) -> Set[_UnsafeSpin]:
     """Creates all combinations of coupled spins."""
-    spins_daughters_coupled: Set[_Spin] = set()
+    spins_daughters_coupled: Set[_UnsafeSpin] = set()
     spin_list = deepcopy(spins)
     while spin_list:
         if spins_daughters_coupled:
@@ -616,7 +618,9 @@ def __create_coupled_spins(spins: List[_Spin]) -> Set[_Spin]:
     return spins_daughters_coupled
 
 
-def __spin_couplings(spin1: _Spin, spin2: _Spin) -> Set[_Spin]:
+def __spin_couplings(
+    spin1: _UnsafeSpin, spin2: _UnsafeSpin
+) -> Set[_UnsafeSpin]:
     r"""Implement the coupling of two spins.
 
     :math:`|S_1 - S_2| \leq S \leq |S_1 + S_2|` and :math:`M_1 + M_2 = M`
@@ -626,11 +630,11 @@ def __spin_couplings(spin1: _Spin, spin2: _Spin) -> Set[_Spin]:
 
     sum_proj = spin1.projection + spin2.projection
     return {
-        _Spin(x, sum_proj)
+        _UnsafeSpin(x, sum_proj)
         for x in arange(abs(s_1 - s_2), s_1 + s_2 + 1, 1.0)
         if x >= abs(sum_proj)
         and not _is_clebsch_gordan_coefficient_zero(
-            spin1, spin2, _Spin(x, sum_proj)
+            spin1, spin2, _UnsafeSpin(x, sum_proj)
         )
     }
 
@@ -684,11 +688,11 @@ def isospin_conservation(
         return False
     return _check_spin_couplings(
         [
-            _Spin(x.isospin_magnitude, x.isospin_projection)
+            _UnsafeSpin(x.isospin_magnitude, x.isospin_projection)
             for x in ingoing_isospins
         ],
         [
-            _Spin(x.isospin_magnitude, x.isospin_projection)
+            _UnsafeSpin(x.isospin_magnitude, x.isospin_projection)
             for x in outgoing_isospins
         ],
         None,
@@ -741,11 +745,11 @@ def spin_conservation(
 
         return _check_spin_couplings(
             [
-                _Spin(x.spin_magnitude, x.spin_projection)
+                _UnsafeSpin(x.spin_magnitude, x.spin_projection)
                 for x in ingoing_spins
             ],
             [
-                _Spin(x.spin_magnitude, x.spin_projection)
+                _UnsafeSpin(x.spin_magnitude, x.spin_projection)
                 for x in outgoing_spins
             ],
             interaction_qns,
@@ -811,11 +815,11 @@ def clebsch_gordan_helicity_to_canonical(
       `.spin_magnitude_conservation`.
     """
     if len(ingoing_spins) == 1 and len(outgoing_spins) == 2:
-        out_spin1 = _Spin(
+        out_spin1 = _UnsafeSpin(
             outgoing_spins[0].spin_magnitude,
             outgoing_spins[0].spin_projection,
         )
-        out_spin2 = _Spin(
+        out_spin2 = _UnsafeSpin(
             outgoing_spins[1].spin_magnitude,
             -outgoing_spins[1].spin_projection,
         )
@@ -824,20 +828,20 @@ def clebsch_gordan_helicity_to_canonical(
         if helicity_diff != interaction_qns.s_projection:
             return False
 
-        ang_mom = _Spin(
+        ang_mom = _UnsafeSpin(
             interaction_qns.l_magnitude, interaction_qns.l_projection
         )
-        coupled_spin = _Spin(
+        coupled_spin = _UnsafeSpin(
             interaction_qns.s_magnitude, interaction_qns.s_projection
         )
         parent_spin = ingoing_spins[0].spin_magnitude
 
-        coupled_spin = _Spin(coupled_spin.magnitude, helicity_diff)
+        coupled_spin = _UnsafeSpin(coupled_spin.magnitude, helicity_diff)
         if not _check_spin_valid(
             coupled_spin.magnitude, coupled_spin.projection
         ):
             return False
-        in_spin = _Spin(parent_spin, helicity_diff)
+        in_spin = _UnsafeSpin(parent_spin, helicity_diff)
         if not _check_spin_valid(in_spin.magnitude, in_spin.projection):
             return False
 
