@@ -14,6 +14,7 @@ import logging
 from collections import abc
 from typing import (
     Callable,
+    Collection,
     Dict,
     FrozenSet,
     Generic,
@@ -584,14 +585,22 @@ def _attach_node_to_edges(
     return (temp_graph, new_open_end_lines)
 
 
-@attr.s(on_setattr=attr.setters.frozen)
-class PropertyMap(Generic[_K, _V], abc.Mapping):
-    collection: FrozenSet[_K] = attr.ib(converter=frozenset)
-    properties: Dict[_K, _V] = attr.ib(factory=dict, converter=dict)
+class PropertyMapping(  # pylint: disable=too-many-ancestors
+    Generic[_K, _V], abc.MutableMapping
+):
+    def __init__(
+        self,
+        collection: Collection[_K],
+        properties: Optional[Mapping[_K, _V]] = None,
+    ) -> None:
+        self.__collection: FrozenSet[_K] = frozenset(collection)
+        self.__properties: Dict[_K, _V] = dict()
+        if properties is not None:
+            self.__properties = dict(properties)
 
-    def __attrs_post_init__(self) -> None:
-        defined = set(self.properties)
-        existing = set(self.collection)
+    def __post_init__(self) -> None:
+        defined = set(self.__properties)
+        existing = set(self.__collection)
         over_defined = existing & defined ^ defined
         if over_defined:
             raise ValueError(
@@ -600,34 +609,39 @@ class PropertyMap(Generic[_K, _V], abc.Mapping):
             )
 
     def __iter__(self) -> Iterator[_K]:
-        return iter(self.properties)
+        return iter(self.__properties)
 
     def __len__(self) -> int:
-        return len(self.properties)
+        return len(self.__properties)
+
+    def __delitem__(self, key: _K) -> None:
+        del self.__properties[key]
 
     def __getitem__(self, key: _K) -> _V:
         self.__verify_in_collection(key)
-        if key not in self.properties:
+        if key not in self.__properties:
             raise KeyError(f"No property defined for item {key}")
-        return self.properties[key]
+        return self.__properties[key]
 
     def __setitem__(self, key: _K, value: _V) -> None:
         self.__verify_in_collection(key)
-        self.properties[key] = value
+        self.__properties[key] = value
 
     def __verify_in_collection(self, key: _K) -> None:
-        if key not in self.collection:
+        if key not in self.__collection:
             raise KeyError(
                 f'Item {key} does not exist in underlying collection".'
-                f" Available items: {set(self.collection)}"
+                f" Available items: {set(self.__collection)}"
             )
 
 
-def _converter(properties: Union[PropertyMap, Dict]) -> PropertyMap:
-    if isinstance(properties, PropertyMap):
+def _converter(properties: Union[PropertyMapping, Dict]) -> PropertyMapping:
+    if isinstance(properties, PropertyMapping):
         return properties
     if isinstance(properties, abc.Mapping):
-        return PropertyMap(collection=set(properties), properties=properties)
+        return PropertyMapping(
+            collection=set(properties), properties=properties
+        )
     raise NotImplementedError
 
 
@@ -647,14 +661,16 @@ class StateTransitionGraph(Generic[EdgeType]):
     """
 
     topology: Topology = attr.ib()
-    node_props: PropertyMap[int, Optional[InteractionProperties]] = attr.ib(
+    node_props: PropertyMapping[
+        int, Optional[InteractionProperties]
+    ] = attr.ib(
         on_setattr=attr.setters.frozen,
-        validator=attr.validators.instance_of(PropertyMap),
+        validator=attr.validators.instance_of(PropertyMapping),
         converter=_converter,
     )
-    edge_props: PropertyMap[int, Optional[EdgeType]] = attr.ib(
+    edge_props: PropertyMapping[int, Optional[EdgeType]] = attr.ib(
         on_setattr=attr.setters.frozen,
-        validator=attr.validators.instance_of(PropertyMap),
+        validator=attr.validators.instance_of(PropertyMapping),
         converter=_converter,
     )
     graph_node_properties_comparator: Optional[
@@ -667,27 +683,27 @@ class StateTransitionGraph(Generic[EdgeType]):
 
     @node_props.default
     def _default_node_props(self) -> None:
-        self.node_props = PropertyMap(self.topology.nodes)
+        self.node_props = PropertyMapping(self.topology.nodes)
 
     @edge_props.default
     def _default_edge_props(self) -> None:
-        self.edge_props = PropertyMap(self.topology.edges)
+        self.edge_props = PropertyMapping(self.topology.edges)
 
     def __attrs_post_init__(self) -> None:
         object.__setattr__(
             self,
             "edge_props",
-            PropertyMap(
+            PropertyMapping(
                 self.topology.edges,
-                self.edge_props.properties,
+                dict(self.edge_props.items()),
             ),
         )
         object.__setattr__(
             self,
             "node_props",
-            PropertyMap(
+            PropertyMapping(
                 self.topology.nodes,
-                self.node_props.properties,
+                dict(self.node_props.items()),
             ),
         )
 
