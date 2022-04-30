@@ -16,7 +16,12 @@ from .quantum_numbers import (
     NodeQuantumNumbers,
     Parity,
 )
-from .solving import GraphEdgePropertyMap, GraphNodePropertyMap, GraphSettings
+from .solving import (
+    GraphEdgePropertyMap,
+    GraphEdgePropertySetMap,
+    GraphNodePropertyMap,
+    GraphSettings,
+)
 from .topology import StateTransitionGraph
 
 Strength = float
@@ -24,6 +29,16 @@ Strength = float
 GraphSettingsGroups = Dict[
     Strength, List[Tuple[StateTransitionGraph, GraphSettings]]
 ]
+
+
+def create_edge_properties_set(
+    particle: Particle,
+    spin_projections: Set[float],
+) -> GraphEdgePropertySetMap:
+    particle_props = create_edge_properties(particle)
+    property_sets = {k: {v} for k, v in particle_props.items()}
+    property_sets[EdgeQuantumNumbers.spin_projection] = spin_projections
+    return property_sets
 
 
 def create_edge_properties(
@@ -149,24 +164,24 @@ class InteractionDeterminator(ABC):
     @abstractmethod
     def check(
         self,
-        in_edge_props: List[ParticleWithSpin],
-        out_edge_props: List[ParticleWithSpin],
+        in_edge_props: List[Particle],
+        out_edge_props: List[Particle],
         node_props: InteractionProperties,
     ) -> List[InteractionTypes]:
         pass
 
 
 class GammaCheck(InteractionDeterminator):
-    """Conservation check for photons."""
+    """Check if gamma particles are involved (requires EM interaction)."""
 
     def check(
         self,
-        in_edge_props: List[ParticleWithSpin],
-        out_edge_props: List[ParticleWithSpin],
+        in_edge_props: List[Particle],
+        out_edge_props: List[Particle],
         node_props: InteractionProperties,
     ) -> List[InteractionTypes]:
         int_types = list(InteractionTypes)
-        for particle, _ in in_edge_props + out_edge_props:
+        for particle in in_edge_props + out_edge_props:
             if "gamma" in particle.name:
                 int_types = [InteractionTypes.EM]
                 break
@@ -174,16 +189,16 @@ class GammaCheck(InteractionDeterminator):
 
 
 class LeptonCheck(InteractionDeterminator):
-    """Conservation check lepton numbers."""
+    """Check if leptons are involved (requires EM interaction)."""
 
     def check(
         self,
-        in_edge_props: List[ParticleWithSpin],
-        out_edge_props: List[ParticleWithSpin],
+        in_edge_props: List[Particle],
+        out_edge_props: List[Particle],
         node_props: InteractionProperties,
     ) -> List[InteractionTypes]:
         node_interaction_types = list(InteractionTypes)
-        for particle, _ in in_edge_props + out_edge_props:
+        for particle in in_edge_props + out_edge_props:
             if particle.is_lepton():
                 if particle.name.startswith("nu("):
                     node_interaction_types = [InteractionTypes.WEAK]
