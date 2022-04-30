@@ -710,7 +710,7 @@ class SpinEdgeInput:
 
 
 def spin_validity(spin: SpinEdgeInput) -> bool:
-    r"""Check for valid spin magnitude and projection."""
+    """Check for valid spin magnitude and projection."""
     return _check_spin_valid(
         float(spin.spin_magnitude), float(spin.spin_projection)
     )
