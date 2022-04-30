@@ -587,13 +587,13 @@ class StateTransitionGraph(Generic[EdgeType]):
         Since a `.StateTransitionGraph` is frozen (cannot be modified), the
         evolve function will also create a shallow copy the properties.
         """
-        new_node_props = copy.copy(self.__node_props)
+        new_node_props = dict(self.__node_props)
         if node_props:
             _assert_over_defined(self.topology.nodes, node_props)
             for node_id, node_prop in node_props.items():
                 new_node_props[node_id] = node_prop
 
-        new_edge_props = copy.copy(self.__edge_props)
+        new_edge_props = dict(self.__edge_props)
         if edge_props:
             _assert_over_defined(self.topology.edges, edge_props)
             for edge_id, edge_prop in edge_props.items():
@@ -629,18 +629,26 @@ class StateTransitionGraph(Generic[EdgeType]):
                     return False
         return True
 
-    def swap_edges(self, edge_id1: int, edge_id2: int) -> None:
-        self.topology = self.topology.swap_edges(edge_id1, edge_id2)
+    def swap_edges(
+        self, edge_id1: int, edge_id2: int
+    ) -> "StateTransitionGraph[EdgeType]":
+        new_topology = self.topology.swap_edges(edge_id1, edge_id2)
+        new_edge_props = dict(self.__edge_props)
         value1: Optional[EdgeType] = None
         value2: Optional[EdgeType] = None
         if edge_id1 in self.__edge_props:
-            value1 = self.__edge_props.pop(edge_id1)
+            value1 = new_edge_props.pop(edge_id1)
         if edge_id2 in self.__edge_props:
-            value2 = self.__edge_props.pop(edge_id2)
+            value2 = new_edge_props.pop(edge_id2)
         if value1 is not None:
-            self.__edge_props[edge_id2] = value1
+            new_edge_props[edge_id2] = value1
         if value2 is not None:
-            self.__edge_props[edge_id1] = value2
+            new_edge_props[edge_id1] = value2
+        return StateTransitionGraph[EdgeType](
+            topology=new_topology,
+            edge_props=new_edge_props,
+            node_props=dict(self.__node_props),
+        )
 
 
 def _assert_over_defined(items: Collection, properties: Mapping) -> None:

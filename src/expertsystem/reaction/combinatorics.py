@@ -410,69 +410,69 @@ def _generate_spin_permutations(
     return initial_facts_permutations
 
 
-def __get_initial_state_edge_ids(
-    graph: StateTransitionGraph[ParticleWithSpin],
-) -> Iterable[int]:
-    return graph.topology.incoming_edge_ids
-
-
-def __get_final_state_edge_ids(
-    graph: StateTransitionGraph[ParticleWithSpin],
-) -> Iterable[int]:
-    return graph.topology.outgoing_edge_ids
-
-
 def match_external_edges(
-    graphs: List[StateTransitionGraph[ParticleWithSpin]],
-) -> None:
-    if not isinstance(graphs, list):
-        raise TypeError("graphs argument is not of type list!")
-    if not graphs:
-        return
-    ref_graph_id = 0
-    _match_external_edge_ids(graphs, ref_graph_id, __get_final_state_edge_ids)
-    _match_external_edge_ids(
-        graphs, ref_graph_id, __get_initial_state_edge_ids
+    graphs: Iterable[StateTransitionGraph[ParticleWithSpin]],
+) -> List[StateTransitionGraph[ParticleWithSpin]]:
+    ref_graph = next(iter(graphs))
+    return [_match_external_edges(g, ref_graph) for g in graphs]
+
+
+def _match_external_edges(
+    graph: StateTransitionGraph[ParticleWithSpin],
+    ref_graph: StateTransitionGraph[ParticleWithSpin],
+) -> StateTransitionGraph[ParticleWithSpin]:
+    if not (
+        isinstance(graph, StateTransitionGraph)
+        and isinstance(ref_graph, StateTransitionGraph)
+    ):
+        raise TypeError(
+            f"Graphs have to be of type {StateTransitionGraph.__name__}"
+        )
+    if graph.topology != ref_graph.topology:
+        raise ValueError("Topologies do not match")
+    output_graph = _match_external_edge_ids(
+        graph, ref_graph, graph.topology.outgoing_edge_ids
     )
+    output_graph = _match_external_edge_ids(
+        graph, ref_graph, graph.topology.incoming_edge_ids
+    )
+    return output_graph
 
 
-def _match_external_edge_ids(  # pylint: disable=too-many-locals
-    graphs: List[StateTransitionGraph[ParticleWithSpin]],
-    ref_graph_id: int,
-    external_edge_getter_function: Callable[
-        [StateTransitionGraph], Iterable[int]
-    ],
-) -> None:
-    ref_graph = graphs[ref_graph_id]
+def _match_external_edge_ids(
+    graph: StateTransitionGraph[ParticleWithSpin],
+    ref_graph: StateTransitionGraph[ParticleWithSpin],
+    edge_ids: Iterable[int],
+) -> StateTransitionGraph[ParticleWithSpin]:
     # create external edge to particle mapping
     ref_edge_id_particle_mapping = _create_edge_id_particle_mapping(
-        ref_graph, external_edge_getter_function(ref_graph)
+        ref_graph, edge_ids
     )
-
-    for graph in graphs[:ref_graph_id] + graphs[ref_graph_id + 1 :]:
-        edge_id_particle_mapping = _create_edge_id_particle_mapping(
-            graph, external_edge_getter_function(graph)
+    edge_id_particle_mapping = _create_edge_id_particle_mapping(
+        graph, edge_ids
+    )
+    # remove matching entries
+    ref_mapping_copy = deepcopy(ref_edge_id_particle_mapping)
+    edge_ids_mapping = {}
+    for key, value in edge_id_particle_mapping.items():
+        if key in ref_mapping_copy and value == ref_mapping_copy[key]:
+            del ref_mapping_copy[key]
+        else:
+            for key_2, value_2 in ref_mapping_copy.items():
+                if value == value_2:
+                    edge_ids_mapping[key] = key_2
+                    del ref_mapping_copy[key_2]
+                    break
+    if len(ref_mapping_copy) != 0:
+        raise ValueError(
+            "Unable to match graphs, due to inherent graph"
+            " structure mismatch"
         )
-        # remove matching entries
-        ref_mapping_copy = deepcopy(ref_edge_id_particle_mapping)
-        edge_ids_mapping = {}
-        for key, value in edge_id_particle_mapping.items():
-            if key in ref_mapping_copy and value == ref_mapping_copy[key]:
-                del ref_mapping_copy[key]
-            else:
-                for key_2, value_2 in ref_mapping_copy.items():
-                    if value == value_2:
-                        edge_ids_mapping[key] = key_2
-                        del ref_mapping_copy[key_2]
-                        break
-        if len(ref_mapping_copy) != 0:
-            raise ValueError(
-                "Unable to match graphs, due to inherent graph"
-                " structure mismatch"
-            )
-        swappings = _calculate_swappings(edge_ids_mapping)
-        for edge_id1, edge_id2 in swappings.items():
-            graph.swap_edges(edge_id1, edge_id2)
+    swappings = _calculate_swappings(edge_ids_mapping)
+    output_graph = graph
+    for edge_id1, edge_id2 in swappings.items():
+        output_graph = output_graph.swap_edges(edge_id1, edge_id2)
+    return output_graph
 
 
 def perform_external_edge_identical_particle_combinatorics(
@@ -487,13 +487,13 @@ def perform_external_edge_identical_particle_combinatorics(
     if not isinstance(graph, StateTransitionGraph):
         raise TypeError("graph argument is not of type StateTransitionGraph!")
     temp_new_graphs = _external_edge_identical_particle_combinatorics(
-        graph, __get_final_state_edge_ids
+        graph, graph.topology.outgoing_edge_ids
     )
     new_graphs = []
     for new_graph in temp_new_graphs:
         new_graphs.extend(
             _external_edge_identical_particle_combinatorics(
-                new_graph, __get_initial_state_edge_ids
+                new_graph, new_graph.topology.outgoing_edge_ids
             )
         )
     return new_graphs
@@ -501,15 +501,11 @@ def perform_external_edge_identical_particle_combinatorics(
 
 def _external_edge_identical_particle_combinatorics(
     graph: StateTransitionGraph[ParticleWithSpin],
-    external_edge_getter_function: Callable[
-        [StateTransitionGraph], Iterable[int]
-    ],
+    edge_ids: Iterable[int],
 ) -> List[StateTransitionGraph]:
     # pylint: disable=too-many-locals
     new_graphs = [graph]
-    edge_particle_mapping = _create_edge_id_particle_mapping(
-        graph, external_edge_getter_function(graph)
-    )
+    edge_particle_mapping = _create_edge_id_particle_mapping(graph, edge_ids)
     identical_particle_groups: Dict[str, Set[int]] = {}
     for key, value in edge_particle_mapping.items():
         if value not in identical_particle_groups:
@@ -537,7 +533,7 @@ def _external_edge_identical_particle_combinatorics(
                 graph_copy = deepcopy(new_graph)
                 swappings = _calculate_swappings(combination)
                 for edge_id1, edge_id2 in swappings.items():
-                    graph_copy.swap_edges(edge_id1, edge_id2)
+                    graph_copy = graph_copy.swap_edges(edge_id1, edge_id2)
                 temp_new_graphs.append(graph_copy)
         new_graphs = temp_new_graphs
     return new_graphs
